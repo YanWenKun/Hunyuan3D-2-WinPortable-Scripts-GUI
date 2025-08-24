@@ -1,0 +1,30 @@
+发布后：
+[ ] 为 API 2.0 提供选项：代码库用 mmgp 或 vanilla
+[ ] 为 2.1 提供选项：分辨率材质 512 或 768
+
+发布前：
+[x] GUI 设计
+[x] 发布 cu126 和 cu129 两个包
+[x] 除 mmgp 代码库外，添加官方 2.0 与 2.1 仓库
+[x] 注意 2.1 依赖项
+[x] HY3D 2.1 需要下载 Real-ESRGAN，参考其文档
+[x] (作废) 材质生成器需要适配新的 Windows 编译脚本
+[x] (作废) 注意 py312 修改为 py311
+
+文档：
+[x] 提醒 Windows 下符号链接功能（启用开发者模式），避免 HF Hub 重复下载
+[x] 提醒 ComfyUI 存在，适配高级配置
+[x] 标注子仓库
+[x] bpy 不可用，但似乎无影响
+[x] 2.0 mmgp 需要 4/6G 显存，2.0 原版需要 16G，
+[x] 2.1 用了非常激进的 mmgp 配置，生成模型仅需 3G，生成材质需要 10G。如果系统内存不足 48G，需要用 profile 5
+[x] (作废) 2.1 的 移除背景功能不可用
+[x] (作废) 提示 2.1 不稳定，它是完全基于 Linux 开发的
+[x] (作废) 提示 API 2.0 是基于原版的
+[x] 提示可以用 MeshLab 查看文件
+https://github.com/cnr-isti-vclab/meshlab/releases
+[x] 提示模型仓库：
+https://huggingface.co/tencent/Hunyuan3D-2/tree/main
+https://huggingface.co/tencent/Hunyuan3D-2mini/tree/main
+https://huggingface.co/tencent/Hunyuan3D-2mv/tree/main
+https://huggingface.co/tencent/Hunyuan3D-2.1/tree/main
