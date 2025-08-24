@@ -324,7 +324,15 @@ class ProcessWorker(QObject):
             model_select = params.get("_model_select", "--mini")
             if model_select:
                 command.append(model_select)
-        
+
+        if program_name in ["Hunyuan3D-2", "Hunyuan3D-2-vanilla", "Hunyuan3D-2.1"]:
+            if enable_texture_gen == False:
+                command.append("--disable_tex")
+
+        if program_name == "API-Hunyuan3D-2":
+            if enable_texture_gen == True:
+                command.append("--enable_tex")
+
         # Add other parameters
         for key, value in params.items():
             if key.startswith('_'):  # Skip internal parameters
