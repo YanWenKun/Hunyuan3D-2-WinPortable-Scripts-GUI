@@ -1,5 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
+chcp 65001
 
 :: Get the parent directory's parent (two levels up)
 for %%i in ("%~dp0..\..") do set "upper_dir=%%~fi"
