@@ -1,69 +1,136 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
 chcp 65001
 
-:: --- 1. 环境设置与检查 ---
-:: 将内嵌的 Git 和 Python 添加到临时 PATH
-set "PATH=%PATH%;%~dp0\MinGit\cmd;%~dp0\python_standalone\Scripts"
+set PATH=%PATH%;%~dp0\MinGit\cmd;%~dp0\python_standalone\Scripts
 
-:: 检查 Git 是否可用
+REM 检查 git 是否存在
 where git >nul 2>&1
-if %errorlevel% neq 0 (
-    echo.
-    echo Error: 未找到 'git' 命令。请确保已安装 Git 并将其添加到 PATH 环境变量中。
-    echo 下载地址: https://git-scm.com/downloads/win
+if errorlevel 1 (
+    echo 错误： git 命令未找到。请确保已安装 git 并将其添加到 PATH 环境变量。
+    echo 下载： https://git-scm.com/downloads/win
     goto :error
 )
 
-:: --- 2. 批量更新 Git 仓库 ---
-:: 定义所有需要更新的目录列表
-set "repo_list=Hunyuan3D-2 Hunyuan3D-2-vanilla Hunyuan3D-2.1 WinScripts-GUI"
+set "target_dir=Hunyuan3D-2"
 
-echo ===============================================
-echo            开始更新所有 Git 仓库
-echo ===============================================
-echo.
-
-:: 循环处理列表中的每一个目录
-for %%G in (%repo_list%) do (
-    echo --- 正在处理: %%G ---
-    if not exist "%%G" (
-        echo [警告] 目录 "%%G" 不存在，已跳过。
-    ) else (
-        pushd "%%G" && (
-            echo 正在执行 git reset --hard...
-            git reset --hard >nul && (
-                echo 正在执行 git pull...
-                git pull
-            ) || (
-                echo [错误] 'git reset --hard' 失败。
-            )
-            popd
-        ) || (
-            echo [错误] 无法进入目录 "%%G"。
-        )
-    )
-    echo.
+REM 检查目标目录是否存在
+if not exist "%target_dir%" (
+    echo 错误：目标目录 "%target_dir%" 不存在。
+    goto :error
 )
 
-:: --- 3. 执行特定仓库的后续操作 ---
-set "gui_dir=WinScripts-GUI"
-if exist "%gui_dir%\bat\init.bat" (
-    echo --- 正在启动 %gui_dir% 的初始化脚本... ---
-    start "GUI Initializer" /d "%gui_dir%\bat" init.bat
-    echo.
-    echo 脚本已在新窗口中启动，你可以安全地关闭此窗口。
-) else (
-    echo [警告] 未找到 "%gui_dir%\bat\init.bat"，无法启动。
+REM 进入目标目录
+pushd "%target_dir%"
+
+echo 正在执行 git reset --hard...
+git reset --hard
+if errorlevel 1 (
+    echo 错误： git reset --hard 执行失败。
+    goto :error
 )
 
-goto :end
+echo 正在执行 git pull...
+git remote set-url origin https://gh-proxy.com/https://github.com/YanWenKun/Hunyuan3D-2.git
+git pull
+if errorlevel 1 (
+    echo 错误： git pull 执行失败。
+    goto :error
+)
+
+popd
+
+set "target_dir=Hunyuan3D-2-vanilla"
+
+REM 检查目标目录是否存在
+if not exist "%target_dir%" (
+    echo 错误：目标目录 "%target_dir%" 不存在。
+    goto :error
+)
+
+REM 进入目标目录
+pushd "%target_dir%"
+
+echo 正在执行 git reset --hard...
+git reset --hard
+if errorlevel 1 (
+    echo 错误： git reset --hard 执行失败。
+    goto :error
+)
+
+echo 正在执行 git pull...
+git remote set-url origin https://gh-proxy.com/https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git
+git pull
+if errorlevel 1 (
+    echo 错误： git pull 执行失败。
+    goto :error
+)
+
+popd
+
+set "target_dir=Hunyuan3D-2.1"
+
+REM 检查目标目录是否存在
+if not exist "%target_dir%" (
+    echo 错误：目标目录 "%target_dir%" 不存在。
+    goto :error
+)
+
+REM 进入目标目录
+pushd "%target_dir%"
+
+echo 正在执行 git reset --hard...
+git reset --hard
+if errorlevel 1 (
+    echo 错误： git reset --hard 执行失败。
+    goto :error
+)
+
+echo 正在执行 git pull...
+git remote set-url origin https://gh-proxy.com/https://github.com/YanWenKun/Hunyuan3D-2.1.git
+git pull
+if errorlevel 1 (
+    echo 错误： git pull 执行失败。
+    goto :error
+)
+
+popd
+
+set "target_dir=WinScripts-GUI"
+
+if not exist "%target_dir%" (
+    echo 错误：目标目录 "%target_dir%" 不存在。
+    goto :error
+)
+
+pushd "%target_dir%"
+
+echo 正在执行 git reset --hard...
+git reset --hard
+if errorlevel 1 (
+    echo 错误： git reset --hard 执行失败。
+    goto :error
+)
+
+echo 正在执行 git pull...
+git remote set-url origin https://gh-proxy.com/https://github.com/YanWenKun/Hunyuan3D-2-WinPortable-Scripts-GUI.git
+git pull
+if errorlevel 1 (
+    echo 错误： git pull 执行失败。
+    goto :error
+)
+
+start /d .\bat init.bat
+
+echo 已在新窗口执行脚本，可关闭本窗口
+
+popd
+
+goto :eof
 
 :error
-echo.
-echo !!! 脚本执行过程中发生错误，已中止。 !!!
+echo 脚本执行过程中发生错误。
 
-:end
-echo.
+:eof
 endlocal
 pause
