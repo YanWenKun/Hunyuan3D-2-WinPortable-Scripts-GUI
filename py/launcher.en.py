@@ -45,7 +45,7 @@ PROGRAMS = [
                   ],
                   "default": "--mini"},
             {"name": "--turbo", "type": "boolean", "label": "Use Turbo Model", "help": "Enabled by default, significantly faster with slightly lower quality", "default": True},
-            {"name": "--enable_t23d", "type": "boolean", "label": "Enable Text-to-3D", "help": "Principle: Generate image from prompt first, then generate 3D from image", "default": False},
+            {"name": "--enable_t23d", "type": "boolean", "label": "Enable Text-to-3D", "help": "How it works: Generate image from prompt first, then generate 3D from image", "default": False},
             {"name": "--profile", "type": "choice", "label": "VRAM Optimization Level", "help":"Select mmgp optimization level to enable quantization, slicing, VRAM offloading, etc.", "options": [
                   {"name": "1", "label":"1-High Memory, High VRAM"},
                   {"name": "2", "label":"2-High Memory, Low VRAM"},
@@ -65,7 +65,7 @@ PROGRAMS = [
             {"name": "_enable_texture_gen", "type": "boolean", "label": "Enable Texture Generation", "help": "Requires CUDA and MSVC installation. By default, may require over 16GB VRAM"},
             {"name": "--low_vram_mode", "type": "boolean", "label": "Low VRAM Mode", "default": True},
             {"name": "--enable_flashvdm", "type": "boolean", "label": "Enable FlashVDM", "help": "Use with Turbo model", "default": False},
-            {"name": "--enable_t23d", "type": "boolean", "label": "Enable Text-to-3D", "help": "Principle: Generate image from prompt first, then generate 3D from image", "default": False},
+            {"name": "--enable_t23d", "type": "boolean", "label": "Enable Text-to-3D", "help": "How it works: Generate image from prompt first, then generate 3D from image", "default": False},
             {"name": "--model_path", "type": "string", "label": "Model to Use", "default": "tencent/Hunyuan3D-2"},
             {"name": "--subfolder", "type": "string", "label": "Model Subfolder", "default": "hunyuan3d-dit-v2-0"},
             {"name": "--texgen_model_path", "type": "string", "label": "Model for Texture Generation", "default": "tencent/Hunyuan3D-2"},
@@ -85,7 +85,7 @@ PROGRAMS = [
         "script": "gradio_app.py",
         "parameters": [
             {"name": "_enable_texture_gen", "type": "boolean", "label": "Enable Texture Generation", "help": "Requires CUDA and MSVC installation. Under default maximum optimization settings, generating mesh requires 3GB VRAM, generating texture requires 10GB VRAM"},
-            {"name": "--enable_t23d", "type": "boolean", "label": "Enable Text-to-3D", "help": "Principle: Generate image from prompt first, then generate 3D from image", "default": False},
+            {"name": "--enable_t23d", "type": "boolean", "label": "Enable Text-to-3D", "help": "How it works: Generate image from prompt first, then generate 3D from image", "default": False},
             {"name": "--low_vram_mode", "type": "boolean", "label": "Low VRAM Mode", "help": "Enabled by default, not conflicting with mmgp optimization; disabling will significantly increase VRAM usage", "default": True},
             {"name": "--profile", "type": "choice", "label": "VRAM Optimization Level", "help":"Default is 5 (maximum optimization), 4 is significantly faster but requires over 40GB memory", "options": [
                   {"name": "1", "label":"1-High Memory, High VRAM"},

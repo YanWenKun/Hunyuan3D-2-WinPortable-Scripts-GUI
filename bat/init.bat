@@ -15,6 +15,7 @@ if not exist "%upper_dir%" (
 :: List files to copy (one per line, quoted for spaces/Chinese)
 for %%f in (
     "RUN.bat"
+    "RUN_NO-UTF8.bat"
     "UPDATE.bat"
     "启动.bat"
     "更新.bat"
