@@ -85,7 +85,6 @@ PROGRAMS = [
         "script": "gradio_app.py",
         "parameters": [
             {"name": "_enable_texture_gen", "type": "boolean", "label": "启用纹理生成功能", "help": "需要安装CUDA与MSVC。默认最大优化设置下，生成网格需3G显存，生成纹理需10G显存"},
-            {"name": "--enable_t23d", "type": "boolean", "label": "启用文生3D功能", "help": "原理：先由提示词生图，再由图生3D", "default": False},
             {"name": "--low_vram_mode", "type": "boolean", "label": "低显存模式", "help": "默认启用，与 mmgp 优化不冲突，关闭后显存占用明显上升", "default": True},
             {"name": "--profile", "type": "choice", "label": "显存优化等级", "help":"默认为5（最大优化），4会显著更快，但需要40G以上内存", "options": [
                   {"name": "1", "label":"1-高内存，高显存"},

@@ -85,7 +85,6 @@ PROGRAMS = [
         "script": "gradio_app.py",
         "parameters": [
             {"name": "_enable_texture_gen", "type": "boolean", "label": "Enable Texture Generation", "help": "Requires CUDA and MSVC installation. Under default maximum optimization settings, generating mesh requires 3GB VRAM, generating texture requires 10GB VRAM"},
-            {"name": "--enable_t23d", "type": "boolean", "label": "Enable Text-to-3D", "help": "How it works: Generate image from prompt first, then generate 3D from image", "default": False},
             {"name": "--low_vram_mode", "type": "boolean", "label": "Low VRAM Mode", "help": "Enabled by default, not conflicting with mmgp optimization; disabling will significantly increase VRAM usage", "default": True},
             {"name": "--profile", "type": "choice", "label": "VRAM Optimization Level", "help":"Default is 5 (maximum optimization), 4 is significantly faster but requires over 40GB memory", "options": [
                   {"name": "1", "label":"1-High Memory, High VRAM"},
