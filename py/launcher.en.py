@@ -376,12 +376,27 @@ class ProcessWorker(QObject):
     def stop_process(self):
         if self.process and self.is_running:
             self.is_running = False
+            self.output_received.emit("\n--- Attempting to terminate process... ---\n")
             try:
-                self.process.terminate()
-                self.output_received.emit("\n--- Process terminated by user ---\n")
-                self.process_finished.emit(-1)
+                # Use taskkill to forcefully terminate the entire process tree (Windows specific)
+                if sys.platform == "win32":
+                    subprocess.run(
+                        f"taskkill /PID {self.process.pid} /T /F",
+                        check=True,
+                        capture_output=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    self.output_received.emit(f"--- Process tree (PID: {self.process.pid}) has been forcefully terminated. ---\n")
+                else:
+                    # Retain original logic for non-Windows systems
+                    self.process.terminate()
+                    self.output_received.emit(f"--- Process (PID: {self.process.pid}) has been terminated. ---\n")
+                
+                self.process_finished.emit(-1) # Send a signal indicating an abnormal exit
+            except subprocess.CalledProcessError as e:
+                self.output_received.emit(f"--- Failed to terminate process: It may have already exited. {e.stderr.decode(errors='ignore')} ---\n")
             except Exception as e:
-                self.output_received.emit(f"\n--- Error terminating process: {e} ---\n")
+                self.output_received.emit(f"--- An unexpected error occurred while terminating the process: {e} ---\n")
 
 # --- 4. UI Interface ---
 class SettingsWidget(QWidget):
@@ -444,7 +459,6 @@ class SettingsWidget(QWidget):
         self.params_container = QWidget()
         self.params_layout = QFormLayout(self.params_container)
         self.params_layout.setSpacing(15)
-        # *** UI FIX: Set alignment for labels and fields ***
         self.params_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         layout.addWidget(self.params_container)
         layout.addStretch()
@@ -501,7 +515,6 @@ class SettingsWidget(QWidget):
                 help_label.setWordWrap(True)
                 help_label.setStyleSheet("color: #888;")
 
-                # *** UI FIX: Place controls and help text in a vertically laid out container ***
                 field_container = QWidget()
                 field_layout = QVBoxLayout(field_container)
                 field_layout.setContentsMargins(0, 0, 0, 0)
@@ -526,7 +539,7 @@ class SettingsWidget(QWidget):
         self.start_requested.emit({
             "program_name": selected_program_name, 
             "script": program_def['script'],
-            "folder": program_def['folder'],  # Add this line
+            "folder": program_def['folder'],
             "definition": program_def, 
             "parameters": parameters, 
             "common_env_vars": common_env_vars
@@ -701,6 +714,10 @@ class MainWindow(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.settings_page)
 
     def closeEvent(self, event):
+        # Ensure the running subprocess is stopped before closing the window
+        if self.worker.is_running:
+            self.request_worker_stop.emit()
+        
         self.worker_thread.quit()
         self.worker_thread.wait()
         event.accept()

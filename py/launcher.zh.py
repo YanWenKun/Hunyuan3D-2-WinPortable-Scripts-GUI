@@ -377,12 +377,27 @@ class ProcessWorker(QObject):
     def stop_process(self):
         if self.process and self.is_running:
             self.is_running = False
+            self.output_received.emit("\n--- 正在尝试终止进程... ---\n")
             try:
-                self.process.terminate()
-                self.output_received.emit("\n--- 进程已被用户终止 ---\n")
-                self.process_finished.emit(-1)
+                # 使用 Windows taskkill 强制终止整个进程树
+                if sys.platform == "win32":
+                    subprocess.run(
+                        f"taskkill /PID {self.process.pid} /T /F",
+                        check=True,
+                        capture_output=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    self.output_received.emit(f"--- 进程树 (PID: {self.process.pid}) 已被强制终止。 ---\n")
+                else:
+                    # 在非 Windows 系统上保留原有逻辑
+                    self.process.terminate()
+                    self.output_received.emit(f"--- 进程 (PID: {self.process.pid}) 已被终止。 ---\n")
+                
+                self.process_finished.emit(-1) # 发送一个表示非正常退出的信号
+            except subprocess.CalledProcessError as e:
+                self.output_received.emit(f"--- 终止进程失败: 进程可能已经退出。 {e.stderr.decode(errors='ignore')} ---\n")
             except Exception as e:
-                self.output_received.emit(f"\n--- 终止进程时出错: {e} ---\n")
+                self.output_received.emit(f"--- 终止进程时发生意外错误: {e} ---\n")
 
 # --- 4. UI 界面 ---
 class SettingsWidget(QWidget):
@@ -445,7 +460,6 @@ class SettingsWidget(QWidget):
         self.params_container = QWidget()
         self.params_layout = QFormLayout(self.params_container)
         self.params_layout.setSpacing(15)
-        # *** UI FIX: 设置标签和字段的对齐方式 ***
         self.params_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         layout.addWidget(self.params_container)
         layout.addStretch()
@@ -502,7 +516,6 @@ class SettingsWidget(QWidget):
                 help_label.setWordWrap(True)
                 help_label.setStyleSheet("color: #888;")
 
-                # *** UI FIX: 将控件和帮助文本放入一个垂直布局的容器中 ***
                 field_container = QWidget()
                 field_layout = QVBoxLayout(field_container)
                 field_layout.setContentsMargins(0, 0, 0, 0)
@@ -527,7 +540,7 @@ class SettingsWidget(QWidget):
         self.start_requested.emit({
             "program_name": selected_program_name, 
             "script": program_def['script'],
-            "folder": program_def['folder'],  # 添加这一行
+            "folder": program_def['folder'],
             "definition": program_def, 
             "parameters": parameters, 
             "common_env_vars": common_env_vars
@@ -702,6 +715,10 @@ class MainWindow(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.settings_page)
 
     def closeEvent(self, event):
+        # 确保在关闭窗口前，先尝试停止正在运行的子进程
+        if self.worker.is_running:
+            self.request_worker_stop.emit()
+        
         self.worker_thread.quit()
         self.worker_thread.wait()
         event.accept()
