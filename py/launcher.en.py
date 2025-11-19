@@ -208,7 +208,7 @@ class ProcessWorker(QObject):
         if not marker.exists():
             self.output_received.emit("Reinstalling huggingface-hub...")
             subprocess.run([PYTHON_EXE, "-sm", "pip", "uninstall", "--yes", "huggingface-hub"])
-            result = pip_install("huggingface-hub[hf-transfer,cli,hf-xet]")
+            result = pip_install("huggingface-hub[cli,hf-xet]==0.36.0")
             if result == 0:
                 marker.touch()
 
