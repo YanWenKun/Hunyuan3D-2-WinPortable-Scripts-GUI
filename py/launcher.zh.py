@@ -4,13 +4,14 @@ import os
 import json
 import shutil
 import subprocess
+import psutil
 from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QStackedWidget, QFormLayout, QComboBox, QPlainTextEdit,
     QLineEdit, QCheckBox, QTabWidget, QLabel
 )
-from PySide6.QtCore import QObject, QThread, Signal, Qt
+from PySide6.QtCore import QObject, QThread, Signal, Qt, Slot
 
 RUN_PATH = Path.cwd()
 SRC_PATH = Path(__file__).resolve()
@@ -374,30 +375,33 @@ class ProcessWorker(QObject):
             self.process_finished.emit(-1)
         self.is_running = False
 
+    def _kill_process_tree(self, pid):
+        try:
+            parent = psutil.Process(pid)
+            children = parent.children(recursive=True)
+            for child in children:
+                child.kill()
+            parent.kill()
+            psutil.wait_procs(children + [parent], timeout=3)
+            return True
+        except psutil.NoSuchProcess:
+            return True
+        except Exception as e:
+            self.output_received.emit(f"--- 终止进程时发生意外错误: {e} ---\n")
+            return False
+
+    @Slot()
     def stop_process(self):
         if self.process and self.is_running:
             self.is_running = False
             self.output_received.emit("\n--- 正在尝试终止进程... ---\n")
-            try:
-                # 使用 Windows taskkill 强制终止整个进程树
-                if sys.platform == "win32":
-                    subprocess.run(
-                        f"taskkill /PID {self.process.pid} /T /F",
-                        check=True,
-                        capture_output=True,
-                        creationflags=subprocess.CREATE_NO_WINDOW
-                    )
-                    self.output_received.emit(f"--- 进程树 (PID: {self.process.pid}) 已被强制终止。 ---\n")
-                else:
-                    # 在非 Windows 系统上保留原有逻辑
-                    self.process.terminate()
-                    self.output_received.emit(f"--- 进程 (PID: {self.process.pid}) 已被终止。 ---\n")
-                
-                self.process_finished.emit(-1) # 发送一个表示非正常退出的信号
-            except subprocess.CalledProcessError as e:
-                self.output_received.emit(f"--- 终止进程失败: 进程可能已经退出。 {e.stderr.decode(errors='ignore')} ---\n")
-            except Exception as e:
-                self.output_received.emit(f"--- 终止进程时发生意外错误: {e} ---\n")
+            _pid = self.process.pid
+            _success = self._kill_process_tree(_pid)
+            if _success:
+                self.output_received.emit(f"--- 进程树 (PID: {_pid}) 已被终止。 ---\n")
+            else:
+                self.output_received.emit(f"--- 警告: 无法确认进程是否已被终止。 ---\n")
+            self.process_finished.emit(-1) # 发送一个表示非正常退出的信号
 
 # --- 4. UI 界面 ---
 class SettingsWidget(QWidget):
@@ -717,10 +721,25 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         # 确保在关闭窗口前，先尝试停止正在运行的子进程
         if self.worker.is_running:
-            self.request_worker_stop.emit()
-        
+            self.statusBar().showMessage("Closing... Stopping background processes...")
+            self.worker.is_running = False
+            try:
+                if self.worker.process:
+                    self.worker._kill_process_tree(self.worker.process.pid)
+            except Exception:
+                # 回退：发出信号并短暂等待 worker 结束
+                self.request_worker_stop.emit()
+                import time
+                for _ in range(50):
+                    if not self.worker.is_running:
+                        break
+                    time.sleep(0.05)
+
+        # 现在请求已发送（或已直接停止），退出并等待线程
         self.worker_thread.quit()
-        self.worker_thread.wait()
+        self.worker_thread.wait(2500) # 最多等待2.5秒
+        if self.worker_thread.isRunning():
+            self.worker_thread.terminate()
         event.accept()
 
 # --- 6. 程序入口 ---

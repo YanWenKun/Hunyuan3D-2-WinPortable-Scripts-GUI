@@ -4,13 +4,14 @@ import os
 import json
 import shutil
 import subprocess
+import psutil
 from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QStackedWidget, QFormLayout, QComboBox, QPlainTextEdit,
     QLineEdit, QCheckBox, QTabWidget, QLabel
 )
-from PySide6.QtCore import QObject, QThread, Signal, Qt
+from PySide6.QtCore import QObject, QThread, Signal, Qt, Slot
 
 RUN_PATH = Path.cwd()
 SRC_PATH = Path(__file__).resolve()
@@ -373,30 +374,32 @@ class ProcessWorker(QObject):
             self.process_finished.emit(-1)
         self.is_running = False
 
+    def _kill_process_tree(self, pid):
+        try:
+            parent = psutil.Process(pid)
+            children = parent.children(recursive=True)
+            for child in children:
+                child.kill()
+            parent.kill()
+            psutil.wait_procs(children + [parent], timeout=3)
+            return True
+        except psutil.NoSuchProcess:
+            return True
+        except Exception as e:
+            self.output_received.emit(f"--- An unexpected error occurred while terminating the process: {e} ---\n")
+
+    @Slot()
     def stop_process(self):
         if self.process and self.is_running:
             self.is_running = False
             self.output_received.emit("\n--- Attempting to terminate process... ---\n")
-            try:
-                # Use taskkill to forcefully terminate the entire process tree (Windows specific)
-                if sys.platform == "win32":
-                    subprocess.run(
-                        f"taskkill /PID {self.process.pid} /T /F",
-                        check=True,
-                        capture_output=True,
-                        creationflags=subprocess.CREATE_NO_WINDOW
-                    )
-                    self.output_received.emit(f"--- Process tree (PID: {self.process.pid}) has been forcefully terminated. ---\n")
-                else:
-                    # Retain original logic for non-Windows systems
-                    self.process.terminate()
-                    self.output_received.emit(f"--- Process (PID: {self.process.pid}) has been terminated. ---\n")
-                
-                self.process_finished.emit(-1) # Send a signal indicating an abnormal exit
-            except subprocess.CalledProcessError as e:
-                self.output_received.emit(f"--- Failed to terminate process: It may have already exited. {e.stderr.decode(errors='ignore')} ---\n")
-            except Exception as e:
-                self.output_received.emit(f"--- An unexpected error occurred while terminating the process: {e} ---\n")
+            _pid=self.process.pid
+            _success = self._kill_process_tree(_pid)
+            if _success:
+                 self.output_received.emit(f"--- Process tree (PID: {_pid}) has been terminated. ---\n")
+            else:
+                 self.output_received.emit(f"--- Warning: Could not verify process termination. ---\n")
+            self.process_finished.emit(-1) # Send a signal indicating an abnormal exit
 
 # --- 4. UI Interface ---
 class SettingsWidget(QWidget):
@@ -716,10 +719,25 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         # Ensure the running subprocess is stopped before closing the window
         if self.worker.is_running:
-            self.request_worker_stop.emit()
-        
+            self.statusBar().showMessage("Closing... Stopping background processes...")
+            self.worker.is_running = False
+            try:
+                if self.worker.process:
+                    self.worker._kill_process_tree(self.worker.process.pid)
+            except Exception:
+                # Fallback: emit the signal and wait briefly for the worker to clear its state
+                self.request_worker_stop.emit()
+                import time
+                for _ in range(50):
+                    if not self.worker.is_running:
+                        break
+                    time.sleep(0.05)
+
+        # Now that worker has been requested to stop (and should be stopped), quit the thread
         self.worker_thread.quit()
-        self.worker_thread.wait()
+        self.worker_thread.wait(2500) # Wait up to 2.5 seconds
+        if self.worker_thread.isRunning():
+            self.worker_thread.terminate()
         event.accept()
 
 # --- 6. Program Entry ---
