@@ -162,17 +162,38 @@ class ProcessWorker(QObject):
     def run_process(self, program_data, common_env_vars):
 
         def pip_install(package):
+            if not self.is_running:
+                return -1
             pip_cmd = [PYTHON_EXE, "-sm", "pip", "install", package]
-            pip_process = subprocess.Popen(
+            self.process = subprocess.Popen(
                 pip_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding='utf-8', errors='replace',
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
                 env=env
             )
-            for line in iter(pip_process.stdout.readline, ''):
+            for line in iter(self.process.stdout.readline, ''):
+                if not self.is_running:
+                    self._kill_process_tree(self.process.pid)
+                    return -1
                 self.output_received.emit(line)
-            pip_process.wait()
-            return pip_process.returncode
+            self.process.wait()
+            return self.process.returncode
+
+        def run_generic_command(cmd_list):
+            if not self.is_running: return -1
+            self.process = subprocess.Popen(
+                cmd_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding='utf-8', errors='replace',
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
+                env=env
+            )
+            for line in iter(self.process.stdout.readline, ''):
+                if not self.is_running:
+                    self._kill_process_tree(self.process.pid)
+                    return -1
+                self.output_received.emit(line)
+            self.process.wait()
+            return self.process.returncode
 
         self.is_running = True
         script_path = program_data['script']
@@ -208,19 +229,26 @@ class ProcessWorker(QObject):
         marker = SCRIPTS_PATH / ".hf-reinstalled"
         if not marker.exists():
             self.output_received.emit("正在重新安装 huggingface-hub...")
-            subprocess.run([PYTHON_EXE, "-sm", "pip", "uninstall", "--yes", "huggingface-hub"])
-            result = pip_install("huggingface-hub[cli,hf-xet]==0.36.0")
-            if result == 0:
-                marker.touch()
+            uninstall_cmd = [PYTHON_EXE, "-sm", "pip", "uninstall", "--yes", "huggingface-hub"]
+            run_generic_command(uninstall_cmd)
+            if self.is_running:
+                result = pip_install("huggingface-hub[cli,hf-xet]==0.36.0")
+                if result == 0 and self.is_running:
+                    marker.touch()
+        if not self.is_running:
+            self.process_finished.emit(-1)
+            return
 
         # 步骤 2: 如果需要，执行纹理生成安装
         enable_texture_gen = params.get("_enable_texture_gen", False)
         if enable_texture_gen:
             self.status_update.emit("正在为纹理生成功能执行编译安装...")
             self.output_received.emit("--- 开始纹理生成功能设置 ---\n")
-
             self.output_received.emit("编译安装 DISO...")
             result = pip_install("diso")
+            if not self.is_running: 
+                self.process_finished.emit(-1)
+                return
             if result != 0:
                 self.output_received.emit("--- 错误: 编译安装 DISO 失败！ ---\n")
                 self.output_received.emit("注意: 程序没有 DISO 依然可以尝试运行，但将无法使用 dmc 算法\n")
@@ -229,9 +257,11 @@ class ProcessWorker(QObject):
             # 通用的 pip 安装 + pyd 复制函数
             def _install_and_copy(pkg_dir, pkg_name, pyd_src_rel=None, pyd_dst_rel=None):
                 """编译安装指定包，并按需复制 pyd 文件"""
+                if not self.is_running: return False
                 self.status_update.emit(f"编译安装 {pkg_name}...")
                 self.output_received.emit(f"编译安装 {pkg_name}...")
                 result = pip_install(str(pkg_dir))
+                if not self.is_running: return False
                 if result != 0:
                     self.output_received.emit(f"错误: 编译安装 {pkg_name} 失败！")
                     self.process_finished.emit(-1)
@@ -306,6 +336,10 @@ class ProcessWorker(QObject):
             elif program_name == "API-Hunyuan3D-2":
                 success = install_hy3d2()
 
+            if not self.is_running:
+                self.process_finished.emit(-1)
+                return
+
             if not success:
                 self.output_received.emit("\n--- 纹理生成功能设置失败 ---\n")
                 self.process_finished.emit(-1)
@@ -362,6 +396,7 @@ class ProcessWorker(QObject):
             )
             for line in iter(self.process.stdout.readline, ''):
                 if not self.is_running: 
+                    self._kill_process_tree(self.process.pid)
                     break
                 self.output_received.emit(line)
             self.process.wait()
