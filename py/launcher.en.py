@@ -164,7 +164,7 @@ class ProcessWorker(QObject):
         def pip_install(package):
             if not self.is_running:
                 return -1
-            pip_cmd = [PYTHON_EXE, "-sm", "pip", "install", package]
+            pip_cmd = [PYTHON_EXE, "-sm", "pip", "install", "--no-build-isolation", package]
             self.process = subprocess.Popen(
                 pip_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding='utf-8', errors='replace',
