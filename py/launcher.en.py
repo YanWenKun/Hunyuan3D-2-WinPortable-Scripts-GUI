@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 import threading
+import time
 import psutil
 from pathlib import Path
 from PySide6.QtWidgets import (
@@ -175,19 +176,33 @@ class ProcessWorker(QObject):
 
     def run_process(self, program_data, common_env_vars):
 
-        def _ensure_running(self):
+        def _ensure_running():
             if not self.is_running:
                 raise ProcessStopped()
 
         def _collect_output_and_check_cancel(process):
-            for line in iter(process.stdout.readline, ''):
+            while True:
                 if not self.is_running:
                     self._kill_process_tree(process.pid)
                     raise ProcessStopped()
-                self.output_received.emit(line)
+
+                line = process.stdout.readline()
+                if line:
+                    self.output_received.emit(line)
+                    continue
+
+                if process.poll() is not None:
+                    break
+
+                time.sleep(0.1)
+
+            # Drain any remaining output after process termination
+            remaining = process.stdout.read()
+            if remaining:
+                self.output_received.emit(remaining)
 
         def pip_install(package):
-            _ensure_running(self)
+            _ensure_running()
             pip_cmd = [PYTHON_EXE, "-sm", "pip", "install", "--no-build-isolation", package]
             proc = subprocess.Popen(
                 pip_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -201,7 +216,7 @@ class ProcessWorker(QObject):
             return proc.returncode
 
         def run_generic_command(cmd_list):
-            _ensure_running(self)
+            _ensure_running()
             proc = subprocess.Popen(
                 cmd_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding='utf-8', errors='replace',
@@ -413,11 +428,7 @@ class ProcessWorker(QObject):
             )
             self._set_process(proc)
 
-            for line in iter(proc.stdout.readline, ''):
-                if not self.is_running:
-                    self._kill_process_tree(proc.pid)
-                    raise ProcessStopped()
-                self.output_received.emit(line)
+            _collect_output_and_check_cancel(proc)
 
             proc.wait()
             exit_code = proc.returncode if self.is_running else -1
@@ -440,21 +451,50 @@ class ProcessWorker(QObject):
                 exit_code = -1
             self.process_finished.emit(exit_code)
             with self.process_lock:
+                if self.process:
+                    try:
+                        if self.process.stdout:
+                            self.process.stdout.close()
+                    except Exception:
+                        pass
+                    try:
+                        if self.process.stdin:
+                            self.process.stdin.close()
+                    except Exception:
+                        pass
                 self.process = None
 
     def _kill_process_tree(self, pid):
         try:
             parent = psutil.Process(pid)
             children = parent.children(recursive=True)
+
+            # First attempt soft termination
             for child in children:
-                child.kill()
-            parent.kill()
-            psutil.wait_procs(children + [parent], timeout=3)
+                try:
+                    child.terminate()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            try:
+                parent.terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+            gone, alive = psutil.wait_procs(children + [parent], timeout=3)
+            if alive:
+                for p in alive:
+                    try:
+                        p.kill()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                psutil.wait_procs(alive, timeout=3)
+
             return True
         except psutil.NoSuchProcess:
             return True
         except Exception as e:
             self.output_received.emit(f"--- An unexpected error occurred while terminating the process: {e} ---\n")
+            return False
 
     @Slot()
     def stop_process(self):
