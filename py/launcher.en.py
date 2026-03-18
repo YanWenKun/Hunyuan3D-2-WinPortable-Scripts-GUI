@@ -4,6 +4,7 @@ import os
 import json
 import shutil
 import subprocess
+import threading
 import psutil
 from pathlib import Path
 from PySide6.QtWidgets import (
@@ -148,6 +149,10 @@ class ConfigManager:
 
 
 # --- 3. Background Worker Thread ---
+class ProcessStopped(Exception):
+    """Raised when process run is stopped by user action."""
+    pass
+
 class ProcessWorker(QObject):
     """Executes subprocesses in a separate thread."""
     output_received = Signal(str)
@@ -158,42 +163,55 @@ class ProcessWorker(QObject):
         super().__init__()
         self.process = None
         self.is_running = False
+        self.process_lock = threading.Lock()
+
+    def _set_process(self, process):
+        with self.process_lock:
+            self.process = process
+
+    def _get_process(self):
+        with self.process_lock:
+            return self.process
 
     def run_process(self, program_data, common_env_vars):
 
-        def pip_install(package):
+        def _ensure_running(self):
             if not self.is_running:
-                return -1
+                raise ProcessStopped()
+
+        def _collect_output_and_check_cancel(process):
+            for line in iter(process.stdout.readline, ''):
+                if not self.is_running:
+                    self._kill_process_tree(process.pid)
+                    raise ProcessStopped()
+                self.output_received.emit(line)
+
+        def pip_install(package):
+            _ensure_running(self)
             pip_cmd = [PYTHON_EXE, "-sm", "pip", "install", "--no-build-isolation", package]
-            self.process = subprocess.Popen(
+            proc = subprocess.Popen(
                 pip_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding='utf-8', errors='replace',
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
                 env=env
             )
-            for line in iter(self.process.stdout.readline, ''):
-                if not self.is_running:
-                    self._kill_process_tree(self.process.pid)
-                    return -1
-                self.output_received.emit(line)
-            self.process.wait()
-            return self.process.returncode
+            self._set_process(proc)
+            _collect_output_and_check_cancel(proc)
+            proc.wait()
+            return proc.returncode
 
         def run_generic_command(cmd_list):
-            if not self.is_running: return -1
-            self.process = subprocess.Popen(
+            _ensure_running(self)
+            proc = subprocess.Popen(
                 cmd_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding='utf-8', errors='replace',
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
                 env=env
             )
-            for line in iter(self.process.stdout.readline, ''):
-                if not self.is_running:
-                    self._kill_process_tree(self.process.pid)
-                    return -1
-                self.output_received.emit(line)
-            self.process.wait()
-            return self.process.returncode
+            self._set_process(proc)
+            _collect_output_and_check_cancel(proc)
+            proc.wait()
+            return proc.returncode
 
         self.is_running = True
         script_path = program_data['script']
@@ -385,29 +403,44 @@ class ProcessWorker(QObject):
         self.output_received.emit(f"\nStarting subprocess...\n")
         self.output_received.emit(f"Executing command:\ncd {program_dir} && {' '.join(command)}\n\n")
 
+        exit_code = None
         try:
-            # Switch to program directory and start process
-            self.process = subprocess.Popen(
+            proc = subprocess.Popen(
                 command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding='utf-8', errors='replace', env=env,
                 cwd=program_dir,  # Key modification: set working directory
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
             )
-            for line in iter(self.process.stdout.readline, ''):
-                if not self.is_running: 
-                    self._kill_process_tree(self.process.pid)
-                    break
+            self._set_process(proc)
+
+            for line in iter(proc.stdout.readline, ''):
+                if not self.is_running:
+                    self._kill_process_tree(proc.pid)
+                    raise ProcessStopped()
                 self.output_received.emit(line)
-            self.process.wait()
-            if self.is_running: 
-                self.process_finished.emit(self.process.returncode)
+
+            proc.wait()
+            exit_code = proc.returncode if self.is_running else -1
+
+        except ProcessStopped:
+            exit_code = -1
+            self.output_received.emit("--- Process stop requested by user. ---\n")
+
         except FileNotFoundError:
             self.output_received.emit(f"Error: Script not found {script_path}\n")
-            self.process_finished.emit(-1)
+            exit_code = -1
+
         except Exception as e:
             self.output_received.emit(f"Unexpected error occurred: {e}\n")
-            self.process_finished.emit(-1)
-        self.is_running = False
+            exit_code = -1
+
+        finally:
+            self.is_running = False
+            if exit_code is None:
+                exit_code = -1
+            self.process_finished.emit(exit_code)
+            with self.process_lock:
+                self.process = None
 
     def _kill_process_tree(self, pid):
         try:
@@ -425,16 +458,19 @@ class ProcessWorker(QObject):
 
     @Slot()
     def stop_process(self):
-        if self.process and self.is_running:
+        proc = self._get_process()
+        if proc and self.is_running:
             self.is_running = False
             self.output_received.emit("\n--- Attempting to terminate process... ---\n")
-            _pid=self.process.pid
+            _pid = proc.pid
             _success = self._kill_process_tree(_pid)
             if _success:
-                 self.output_received.emit(f"--- Process tree (PID: {_pid}) has been terminated. ---\n")
+                self.output_received.emit(f"--- Process tree (PID: {_pid}) has been terminated. ---\n")
             else:
-                 self.output_received.emit(f"--- Warning: Could not verify process termination. ---\n")
-            self.process_finished.emit(-1) # Send a signal indicating an abnormal exit
+                self.output_received.emit(f"--- Warning: Could not verify process termination. ---\n")
+            # process_finished is emitted by run_process finally block
+        else:
+            self.output_received.emit("\n--- No running process found to stop. ---\n")
 
 # --- 4. UI Interface ---
 class SettingsWidget(QWidget):
